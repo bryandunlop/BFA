@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
-import { Camera, XCircle } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Camera, XCircle, ScanBarcode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface BarcodeScannerProps {
@@ -13,15 +12,36 @@ interface BarcodeScannerProps {
 export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
     const [isScanning, setIsScanning] = useState(false);
     const [permissionDenied, setPermissionDenied] = useState(false);
-    const scannerRef = useRef<Html5Qrcode | null>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
+    const [error, setError] = useState<string | null>(null);
+    const scannerRef = useRef<ReturnType<typeof import("html5-qrcode").Html5Qrcode.prototype.start> | null>(null);
+    const html5QrCodeRef = useRef<import("html5-qrcode").Html5Qrcode | null>(null);
 
-    const startScanning = async () => {
-        if (!containerRef.current) return;
+    const stopScanning = useCallback(async () => {
+        if (html5QrCodeRef.current) {
+            try {
+                await html5QrCodeRef.current.stop();
+                html5QrCodeRef.current.clear();
+                html5QrCodeRef.current = null;
+            } catch (err) {
+                console.error("Failed to stop scanner:", err);
+            }
+        }
+        setIsScanning(false);
+    }, []);
+
+    const startScanning = useCallback(async () => {
+        setIsScanning(true);
+        setError(null);
+
+        // Small delay to ensure the container div is rendered
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
+            // Dynamic import to avoid SSR issues
+            const { Html5Qrcode } = await import("html5-qrcode");
+
             const scanner = new Html5Qrcode("barcode-scanner-container");
-            scannerRef.current = scanner;
+            html5QrCodeRef.current = scanner;
 
             await scanner.start(
                 { facingMode: "environment" },
@@ -40,32 +60,28 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
                 }
             );
 
-            setIsScanning(true);
             setPermissionDenied(false);
         } catch (err) {
             console.error("Failed to start scanner:", err);
-            setPermissionDenied(true);
-            onError?.("Camera access denied. Please allow camera permissions.");
-        }
-    };
+            setIsScanning(false);
 
-    const stopScanning = async () => {
-        if (scannerRef.current) {
-            try {
-                await scannerRef.current.stop();
-                scannerRef.current = null;
-            } catch (err) {
-                console.error("Failed to stop scanner:", err);
+            const errorMessage = err instanceof Error ? err.message : "Unknown error";
+
+            if (errorMessage.includes("Permission") || errorMessage.includes("NotAllowedError")) {
+                setPermissionDenied(true);
+                onError?.("Camera access denied. Please allow camera permissions.");
+            } else {
+                setError(errorMessage);
+                onError?.(errorMessage);
             }
         }
-        setIsScanning(false);
-    };
+    }, [onScan, onError, stopScanning]);
 
     useEffect(() => {
         return () => {
             // Cleanup on unmount
-            if (scannerRef.current) {
-                scannerRef.current.stop().catch(() => { });
+            if (html5QrCodeRef.current) {
+                html5QrCodeRef.current.stop().catch(() => { });
             }
         };
     }, []);
@@ -77,7 +93,33 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
                 <p className="text-muted-foreground">
                     Camera access denied. Please enable camera permissions in your browser settings.
                 </p>
-                <Button variant="outline" onClick={() => setPermissionDenied(false)}>
+                <Button
+                    variant="outline"
+                    onClick={() => {
+                        setPermissionDenied(false);
+                        startScanning();
+                    }}
+                >
+                    Try Again
+                </Button>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="text-center py-8 space-y-4">
+                <XCircle className="w-12 h-12 text-red-400 mx-auto" />
+                <p className="text-muted-foreground">
+                    Error: {error}
+                </p>
+                <Button
+                    variant="outline"
+                    onClick={() => {
+                        setError(null);
+                        startScanning();
+                    }}
+                >
                     Try Again
                 </Button>
             </div>
@@ -88,7 +130,7 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
         <div className="space-y-4">
             {!isScanning ? (
                 <div className="text-center py-8 space-y-4">
-                    <Camera className="w-12 h-12 text-emerald-500 mx-auto" />
+                    <ScanBarcode className="w-12 h-12 text-emerald-500 mx-auto" />
                     <p className="text-muted-foreground">
                         Scan food product barcodes to auto-fill nutrition info
                     </p>
@@ -104,8 +146,7 @@ export function BarcodeScanner({ onScan, onError }: BarcodeScannerProps) {
                 <div className="space-y-4">
                     <div
                         id="barcode-scanner-container"
-                        ref={containerRef}
-                        className="w-full rounded-lg overflow-hidden"
+                        className="w-full min-h-[300px] rounded-lg overflow-hidden bg-black"
                     />
                     <Button
                         variant="outline"
