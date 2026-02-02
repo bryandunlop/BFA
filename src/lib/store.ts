@@ -177,3 +177,37 @@ export function getRemainingMacros(): DailyTotals {
         fats: Math.max(0, targets.fats - totals.fats),
     };
 }
+
+// Get entries for a date range
+export function getEntriesForDateRange(startDate: string, endDate: string): FoodEntry[] {
+    return getAllEntries().filter(
+        (entry) => entry.date >= startDate && entry.date <= endDate
+    );
+}
+
+// Get daily totals for a date range (for charts)
+export function getDailyTotalsForRange(days: number): { date: string; totals: DailyTotals }[] {
+    const result: { date: string; totals: DailyTotals }[] = [];
+    const today = new Date();
+
+    for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split("T")[0];
+
+        const entries = getAllEntries().filter((entry) => entry.date === dateStr);
+        const totals = entries.reduce(
+            (acc, entry) => ({
+                calories: acc.calories + entry.calories,
+                protein: acc.protein + entry.protein,
+                carbs: acc.carbs + entry.carbs,
+                fats: acc.fats + entry.fats,
+            }),
+            { calories: 0, protein: 0, carbs: 0, fats: 0 }
+        );
+
+        result.push({ date: dateStr, totals });
+    }
+
+    return result;
+}

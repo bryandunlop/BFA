@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Flame, Zap, Search, Utensils, Loader2, Check, Sparkles } from "lucide-react";
+import { Plus, Flame, Zap, Search, Loader2, Check, Sparkles, Camera, ScanBarcode } from "lucide-react";
 import { addEntry, getTodaysTotals, type DailyTotals } from "@/lib/store";
+import { BarcodeScanner } from "@/components/barcode-scanner";
+import { PhotoCapture } from "@/components/photo-capture";
 
 type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
@@ -34,6 +36,8 @@ export default function LogPage() {
     const [justAdded, setJustAdded] = useState<string | null>(null);
     const [aiQuery, setAiQuery] = useState("");
     const [isLookingUp, setIsLookingUp] = useState(false);
+    const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
+    const [isScanningBarcode, setIsScanningBarcode] = useState(false);
     const [manualEntry, setManualEntry] = useState({
         name: "",
         calories: "",
@@ -100,7 +104,6 @@ export default function LogPage() {
 
             if (response.ok) {
                 const data = await response.json();
-                // Pre-fill the manual entry form with AI results
                 setManualEntry({
                     name: data.name,
                     calories: String(data.calories),
@@ -114,6 +117,57 @@ export default function LogPage() {
             console.error("AI lookup failed:", error);
         } finally {
             setIsLookingUp(false);
+        }
+    };
+
+    const handleBarcodeScan = async (barcode: string) => {
+        setIsScanningBarcode(true);
+        try {
+            const response = await fetch(`/api/scan-barcode?barcode=${barcode}`);
+            const data = await response.json();
+
+            if (data.found) {
+                setManualEntry({
+                    name: data.name,
+                    calories: String(data.calories),
+                    protein: String(data.protein),
+                    carbs: String(data.carbs),
+                    fats: String(data.fats),
+                });
+            } else {
+                // Product not found - could show a toast here
+                console.log("Product not found in database");
+            }
+        } catch (error) {
+            console.error("Barcode lookup failed:", error);
+        } finally {
+            setIsScanningBarcode(false);
+        }
+    };
+
+    const handlePhotoCapture = async (imageData: string) => {
+        setIsAnalyzingPhoto(true);
+        try {
+            const response = await fetch("/api/analyze-food-image", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ imageData }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setManualEntry({
+                    name: data.name,
+                    calories: String(data.calories),
+                    protein: String(data.protein),
+                    carbs: String(data.carbs),
+                    fats: String(data.fats),
+                });
+            }
+        } catch (error) {
+            console.error("Photo analysis failed:", error);
+        } finally {
+            setIsAnalyzingPhoto(false);
         }
     };
 
@@ -165,10 +219,12 @@ export default function LogPage() {
             </div>
 
             <Tabs defaultValue="ai" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="ai">AI Lookup</TabsTrigger>
-                    <TabsTrigger value="quick">Quick Add</TabsTrigger>
-                    <TabsTrigger value="manual">Manual</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-5">
+                    <TabsTrigger value="ai" className="text-xs">AI</TabsTrigger>
+                    <TabsTrigger value="photo" className="text-xs">Photo</TabsTrigger>
+                    <TabsTrigger value="scan" className="text-xs">Scan</TabsTrigger>
+                    <TabsTrigger value="quick" className="text-xs">Quick</TabsTrigger>
+                    <TabsTrigger value="manual" className="text-xs">Manual</TabsTrigger>
                 </TabsList>
 
                 {/* AI Lookup Tab */}
@@ -186,7 +242,7 @@ export default function LogPage() {
                             </p>
                             <div className="flex gap-2">
                                 <Input
-                                    placeholder="e.g., grilled cheese sandwich, 2 eggs, protein shake..."
+                                    placeholder="e.g., grilled cheese sandwich..."
                                     value={aiQuery}
                                     onChange={(e) => setAiQuery(e.target.value)}
                                     onKeyDown={(e) => {
@@ -241,6 +297,112 @@ export default function LogPage() {
                                         Log This
                                     </Button>
                                 </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Photo Tab */}
+                <TabsContent value="photo" className="space-y-4 mt-4">
+                    <Card className="bg-card/50 backdrop-blur border-border/50">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <Camera className="w-5 h-5 text-emerald-500" />
+                                Photo Logging
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {isAnalyzingPhoto ? (
+                                <div className="text-center py-8 space-y-4">
+                                    <Loader2 className="w-12 h-12 text-emerald-500 mx-auto animate-spin" />
+                                    <p className="text-muted-foreground">Analyzing your food...</p>
+                                </div>
+                            ) : manualEntry.name ? (
+                                <div className="p-4 rounded-lg bg-muted/30 space-y-3">
+                                    <p className="font-medium">{manualEntry.name}</p>
+                                    <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                                        <div>
+                                            <p className="font-bold text-emerald-500">{manualEntry.calories}</p>
+                                            <p className="text-xs text-muted-foreground">cal</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-blue-500">{manualEntry.protein}g</p>
+                                            <p className="text-xs text-muted-foreground">protein</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold">{manualEntry.carbs}g</p>
+                                            <p className="text-xs text-muted-foreground">carbs</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold">{manualEntry.fats}g</p>
+                                            <p className="text-xs text-muted-foreground">fats</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={() => {
+                                            handleManualSubmit({ preventDefault: () => { } } as React.FormEvent);
+                                        }}
+                                        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Log This
+                                    </Button>
+                                </div>
+                            ) : (
+                                <PhotoCapture onCapture={handlePhotoCapture} />
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Scan Tab */}
+                <TabsContent value="scan" className="space-y-4 mt-4">
+                    <Card className="bg-card/50 backdrop-blur border-border/50">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                <ScanBarcode className="w-5 h-5 text-emerald-500" />
+                                Barcode Scanner
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {isScanningBarcode ? (
+                                <div className="text-center py-8 space-y-4">
+                                    <Loader2 className="w-12 h-12 text-emerald-500 mx-auto animate-spin" />
+                                    <p className="text-muted-foreground">Looking up product...</p>
+                                </div>
+                            ) : manualEntry.name ? (
+                                <div className="p-4 rounded-lg bg-muted/30 space-y-3">
+                                    <p className="font-medium">{manualEntry.name}</p>
+                                    <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                                        <div>
+                                            <p className="font-bold text-emerald-500">{manualEntry.calories}</p>
+                                            <p className="text-xs text-muted-foreground">cal</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-blue-500">{manualEntry.protein}g</p>
+                                            <p className="text-xs text-muted-foreground">protein</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold">{manualEntry.carbs}g</p>
+                                            <p className="text-xs text-muted-foreground">carbs</p>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold">{manualEntry.fats}g</p>
+                                            <p className="text-xs text-muted-foreground">fats</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={() => {
+                                            handleManualSubmit({ preventDefault: () => { } } as React.FormEvent);
+                                        }}
+                                        className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600"
+                                    >
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Log This
+                                    </Button>
+                                </div>
+                            ) : (
+                                <BarcodeScanner onScan={handleBarcodeScan} />
                             )}
                         </CardContent>
                     </Card>
